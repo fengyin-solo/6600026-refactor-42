@@ -1,62 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { useSequenceStore } from './store/sequence';
+import { onMounted } from 'vue';
 import AlignmentView from './components/AlignmentView.vue';
 import PhyloTree from './components/PhyloTree.vue';
 import GCChart from './components/GCChart.vue';
+import { useSequenceStore } from './store/sequence';
+import { useSequenceManager } from './composables/useSequenceManager';
+import { useAlignmentAnalysis } from './composables/useAlignmentAnalysis';
+import { useGCContentAnalysis } from './composables/useGCContentAnalysis';
+import { usePhyloTreeAnalysis } from './composables/usePhyloTreeAnalysis';
 
-const store = useSequenceStore();
-const gcSeqId = ref('');
-const gcWindowSize = ref(50);
-const newSeqName = ref('');
-const newSeqData = ref('');
-const isBuildingTree = ref(false);
+const sequenceStore = useSequenceStore();
+const { newSeqName, newSeqData, addSequence, loadMockSequences } = useSequenceManager();
+const { alignmentStore, runAlignment } = useAlignmentAnalysis();
+const { gcContentStore, analyzeGC } = useGCContentAnalysis();
+const { phyloTreeStore, buildTree } = usePhyloTreeAnalysis();
 
 onMounted(() => {
-  store.loadMockSequences();
-  if (store.sequences.length > 0) {
-    gcSeqId.value = store.sequences[0].id;
-  }
+  loadMockSequences();
 });
-
-function handleRunAlignment() {
-  if (!store.selectedSeq1 || !store.selectedSeq2) return;
-  if (store.selectedSeq1 === store.selectedSeq2) {
-    alert('请选择两个不同的序列');
-    return;
-  }
-  store.runAlignment(store.selectedSeq1, store.selectedSeq2, store.currentAlgorithm);
-}
-
-function handleAnalyzeGC() {
-  if (!gcSeqId.value) return;
-  store.analyzeGC(gcSeqId.value, gcWindowSize.value);
-}
-
-function handleBuildTree() {
-  if (store.sequences.length < 2) {
-    alert('至少需要2条序列');
-    return;
-  }
-  isBuildingTree.value = true;
-  setTimeout(() => {
-    store.buildTree();
-    isBuildingTree.value = false;
-  }, 100);
-}
-
-function handleAddSequence() {
-  if (!newSeqName.value.trim() || !newSeqData.value.trim()) return;
-  const id = 'custom-' + Date.now();
-  store.addSequence(id, newSeqName.value.trim(), newSeqData.value.trim());
-  newSeqName.value = '';
-  newSeqData.value = '';
-}
-
-function handleLoadMock() {
-  store.loadMockSequences();
-  gcSeqId.value = store.sequences[0]?.id || '';
-}
 </script>
 
 <template>
@@ -73,7 +34,7 @@ function handleLoadMock() {
       </div>
       <div class="flex items-center gap-2">
         <button
-          @click="handleLoadMock"
+          @click="loadMockSequences"
           class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded transition-colors"
         >
           加载示例序列
@@ -86,7 +47,7 @@ function handleLoadMock() {
       <section class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
         <div class="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
           <h2 class="text-sm font-semibold text-gray-300">序列列表</h2>
-          <span class="text-xs text-gray-500">{{ store.sequences.length }} 条序列</span>
+          <span class="text-xs text-gray-500">{{ sequenceStore.sequences.length }} 条序列</span>
         </div>
 
         <!-- Add sequence form -->
@@ -104,7 +65,7 @@ function handleLoadMock() {
             class="flex-1 px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:border-emerald-500 font-mono"
           />
           <button
-            @click="handleAddSequence"
+            @click="addSequence"
             class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded transition-colors border border-gray-600"
           >
             添加
@@ -123,20 +84,20 @@ function handleLoadMock() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="seq in store.sequences" :key="seq.id" class="border-t border-gray-700 hover:bg-gray-800/50">
+              <tr v-for="seq in sequenceStore.sequences" :key="seq.id" class="border-t border-gray-700 hover:bg-gray-800/50">
                 <td class="px-4 py-1.5 text-cyan-400 font-mono text-xs">{{ seq.id }}</td>
                 <td class="px-4 py-1.5 text-gray-200">{{ seq.name }}</td>
                 <td class="px-4 py-1.5 text-gray-400">{{ seq.data.length }} bp</td>
                 <td class="px-4 py-1.5">
                   <button
-                    @click="store.removeSequence(seq.id)"
+                    @click="sequenceStore.removeSequence(seq.id)"
                     class="text-red-400 hover:text-red-300 text-xs"
                   >
                     删除
                   </button>
                 </td>
               </tr>
-              <tr v-if="store.sequences.length === 0">
+              <tr v-if="sequenceStore.sequences.length === 0">
                 <td colspan="4" class="px-4 py-6 text-center text-gray-500 text-sm">
                   暂无序列 — 点击"加载示例序列"添加
                 </td>
@@ -159,11 +120,11 @@ function handleLoadMock() {
               <div>
                 <label class="block text-xs text-gray-400 mb-1">序列 1</label>
                 <select
-                  v-model="store.selectedSeq1"
+                  v-model="alignmentStore.selectedSeq1"
                   class="w-full px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-sm focus:outline-none focus:border-emerald-500"
                 >
                   <option value="" disabled>选择序列</option>
-                  <option v-for="seq in store.sequences" :key="seq.id" :value="seq.id">
+                  <option v-for="seq in sequenceStore.sequences" :key="seq.id" :value="seq.id">
                     {{ seq.name }}
                   </option>
                 </select>
@@ -171,11 +132,11 @@ function handleLoadMock() {
               <div>
                 <label class="block text-xs text-gray-400 mb-1">序列 2</label>
                 <select
-                  v-model="store.selectedSeq2"
+                  v-model="alignmentStore.selectedSeq2"
                   class="w-full px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-sm focus:outline-none focus:border-emerald-500"
                 >
                   <option value="" disabled>选择序列</option>
-                  <option v-for="seq in store.sequences" :key="seq.id" :value="seq.id">
+                  <option v-for="seq in sequenceStore.sequences" :key="seq.id" :value="seq.id">
                     {{ seq.name }}
                   </option>
                 </select>
@@ -184,15 +145,15 @@ function handleLoadMock() {
 
             <div class="flex items-center gap-4">
               <label class="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="radio" v-model="store.currentAlgorithm" value="nw" class="accent-emerald-500" />
+                <input type="radio" v-model="alignmentStore.currentAlgorithm" value="nw" class="accent-emerald-500" />
                 <span class="text-gray-300">Needleman-Wunsch (全局)</span>
               </label>
               <label class="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="radio" v-model="store.currentAlgorithm" value="sw" class="accent-emerald-500" />
+                <input type="radio" v-model="alignmentStore.currentAlgorithm" value="sw" class="accent-emerald-500" />
                 <span class="text-gray-300">Smith-Waterman (局部)</span>
               </label>
               <button
-                @click="handleRunAlignment"
+                @click="runAlignment"
                 class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded transition-colors ml-auto"
               >
                 运行比对
@@ -200,7 +161,7 @@ function handleLoadMock() {
             </div>
 
             <!-- Alignment Result -->
-            <AlignmentView :result="store.alignmentResult" />
+            <AlignmentView :result="alignmentStore.result" />
           </div>
         </section>
 
@@ -214,21 +175,21 @@ function handleLoadMock() {
               <div class="flex-1">
                 <label class="block text-xs text-gray-400 mb-1">选择序列</label>
                 <select
-                  v-model="gcSeqId"
+                  v-model="gcContentStore.selectedSeqId"
                   class="w-full px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-sm focus:outline-none focus:border-emerald-500"
                 >
                   <option value="" disabled>选择序列</option>
-                  <option v-for="seq in store.sequences" :key="seq.id" :value="seq.id">
+                  <option v-for="seq in sequenceStore.sequences" :key="seq.id" :value="seq.id">
                     {{ seq.name }}
                   </option>
                 </select>
               </div>
               <div class="flex-1">
                 <label class="block text-xs text-gray-400 mb-1">
-                  窗口大小: <span class="text-cyan-400">{{ gcWindowSize }}</span> bp
+                  窗口大小: <span class="text-cyan-400">{{ gcContentStore.windowSize }}</span> bp
                 </label>
                 <input
-                  v-model.number="gcWindowSize"
+                  v-model.number="gcContentStore.windowSize"
                   type="range"
                   min="10"
                   max="100"
@@ -237,7 +198,7 @@ function handleLoadMock() {
                 />
               </div>
               <button
-                @click="handleAnalyzeGC"
+                @click="analyzeGC"
                 class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded transition-colors self-end"
               >
                 分析
@@ -245,7 +206,7 @@ function handleLoadMock() {
             </div>
 
             <!-- GC Chart -->
-            <GCChart :data="store.gcData" />
+            <GCChart :data="gcContentStore.data" />
           </div>
         </section>
       </div>
@@ -255,15 +216,15 @@ function handleLoadMock() {
         <div class="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
           <h2 class="text-sm font-semibold text-gray-300">系统发育树</h2>
           <button
-            @click="handleBuildTree"
-            :disabled="isBuildingTree || store.sequences.length < 2"
+            @click="buildTree"
+            :disabled="phyloTreeStore.isBuilding || sequenceStore.sequences.length < 2"
             class="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {{ isBuildingTree ? '构建中...' : '构建进化树' }}
+            {{ phyloTreeStore.isBuilding ? '构建中...' : '构建进化树' }}
           </button>
         </div>
         <div class="p-4">
-          <PhyloTree :tree="store.phyloTree" />
+          <PhyloTree :tree="phyloTreeStore.tree" />
         </div>
       </section>
     </div>
